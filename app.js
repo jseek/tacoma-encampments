@@ -1,5 +1,5 @@
-const ENCAMPMENT_FILE = "ES_Encampment_Cleaning_Tracking_-6983636614921870482.geojson";
-const REPORTS_311_FILE = "SeeClickFix_Requests_-6061433369715674122.geojson";
+const ENCAMPMENT_FILE = "data/ES_Encampment_Cleaning_Tracking_-6983636614921870482.geojson";
+const REPORTS_311_FILE = "data/SeeClickFix_Requests_-6061433369715674122.geojson";
 
 const sourcePalette = {
   encampment: "#00d1ff",
