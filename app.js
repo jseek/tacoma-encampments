@@ -1,9 +1,9 @@
-const GEOJSON_FILE = "ES_Encampment_Cleaning_Tracking_-6983636614921870482.geojson";
+const ENCAMPMENT_FILE = "ES_Encampment_Cleaning_Tracking_-6983636614921870482.geojson";
+const REPORTS_311_FILE = "SeeClickFix_Requests_-6061433369715674122.geojson";
 
-const palette = {
-  Maintenance: "#00d1ff",
-  Removal: "#ff6b6b",
-  Unknown: "#ffd166",
+const sourcePalette = {
+  encampment: "#00d1ff",
+  "311": "#ff7f50",
 };
 
 const map = L.map("map", {
@@ -45,8 +45,17 @@ function toDate(value) {
   return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString();
 }
 
-function markerForType(type) {
-  const color = palette[type] || palette.Unknown;
+function toInputDate(value) {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  const y = parsed.getFullYear();
+  const m = String(parsed.getMonth() + 1).padStart(2, "0");
+  const d = String(parsed.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function markerForSource(source) {
+  const color = sourcePalette[source] || "#ffd166";
   return {
     radius: 6,
     weight: 2,
@@ -58,10 +67,25 @@ function markerForType(type) {
 }
 
 function popupContent(properties) {
+  if (properties._source === "311") {
+    return `
+      <dl class="popup-grid">
+        <dt>Source</dt><dd>311</dd>
+        <dt>Created</dt><dd>${toDate(properties._date)}</dd>
+        <dt>Status</dt><dd>${toDisplay(properties.status)}</dd>
+        <dt>Category</dt><dd>${toDisplay(properties.category)}</dd>
+        <dt>Address</dt><dd>${toDisplay(properties.address)}</dd>
+        <dt>Agency</dt><dd>${toDisplay(properties.agency)}</dd>
+        <dt>Report ID</dt><dd>${toDisplay(properties.id)}</dd>
+      </dl>
+    `;
+  }
+
   return `
     <dl class="popup-grid">
+      <dt>Source</dt><dd>Encampment Cleaning</dd>
+      <dt>Submitted</dt><dd>${toDate(properties._date)}</dd>
       <dt>Cleanup Type</dt><dd>${toDisplay(properties.type_of_cleanup)}</dd>
-      <dt>Submitted</dt><dd>${toDate(properties.work_submitted_date)}</dd>
       <dt>Created</dt><dd>${toDate(properties.created_date)}</dd>
       <dt>Created User</dt><dd>${toDisplay(properties.created_user)}</dd>
       <dt>Other Notes</dt><dd>${toDisplay(properties.untitled_question_2_other)}</dd>
@@ -70,35 +94,46 @@ function popupContent(properties) {
   `;
 }
 
-function renderStats(stats, total) {
+function renderStats(total, sourceCounts) {
   const statsEl = document.getElementById("stats");
   const fragments = [
     `<span class="chip"><span class="dot" style="background:#8ab4f8"></span>Total: ${total.toLocaleString()}</span>`,
+    `<span class="chip"><span class="dot" style="background:${sourcePalette.encampment}"></span>Encampment Cleaning: ${(sourceCounts.encampment || 0).toLocaleString()}</span>`,
+    `<span class="chip"><span class="dot" style="background:${sourcePalette["311"]}"></span>311: ${(sourceCounts["311"] || 0).toLocaleString()}</span>`,
   ];
 
-  Object.keys(stats)
-    .sort((a, b) => stats[b] - stats[a])
-    .forEach((type) => {
-      const color = palette[type] || palette.Unknown;
-      fragments.push(
-        `<span class="chip"><span class="dot" style="background:${color}"></span>${type}: ${stats[type].toLocaleString()}</span>`
-      );
-    });
-
   if (!total) {
-    fragments.push(`<span class="chip">No points in selected date range</span>`);
+    fragments.push(`<span class="chip">No points in selected filter range</span>`);
   }
 
   statsEl.innerHTML = fragments.join("");
 }
 
-function toInputDate(value) {
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return null;
-  const y = parsed.getFullYear();
-  const m = String(parsed.getMonth() + 1).padStart(2, "0");
-  const d = String(parsed.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
+function setFilterSummary(startValue, endValue, sourceValue) {
+  const summaryEl = document.getElementById("filter-summary");
+  const sourceLabel =
+    sourceValue === "encampment"
+      ? "Encampment Cleaning"
+      : sourceValue === "311"
+        ? "311"
+        : "Both sources";
+
+  if (!startValue && !endValue) {
+    summaryEl.textContent = `${sourceLabel} | All dates`;
+    return;
+  }
+
+  if (startValue && endValue) {
+    summaryEl.textContent = `${sourceLabel} | ${startValue} to ${endValue}`;
+    return;
+  }
+
+  if (startValue) {
+    summaryEl.textContent = `${sourceLabel} | From ${startValue}`;
+    return;
+  }
+
+  summaryEl.textContent = `${sourceLabel} | Up to ${endValue}`;
 }
 
 function dateBoundsFromInputs() {
@@ -110,64 +145,23 @@ function dateBoundsFromInputs() {
   return { startValue, endValue, startMs, endMs };
 }
 
-function setFilterSummary(startValue, endValue) {
-  const summaryEl = document.getElementById("filter-summary");
-  if (!startValue && !endValue) {
-    summaryEl.textContent = "All dates";
-    return;
-  }
-
-  if (startValue && endValue) {
-    summaryEl.textContent = `${startValue} to ${endValue}`;
-    return;
-  }
-
-  if (startValue) {
-    summaryEl.textContent = `From ${startValue}`;
-    return;
-  }
-
-  summaryEl.textContent = `Up to ${endValue}`;
-}
-
-function applyDateFilter() {
-  const { startValue, endValue, startMs, endMs } = dateBoundsFromInputs();
-  const normalizedStart = startMs !== null && endMs !== null && startMs > endMs ? endMs : startMs;
-  const normalizedEnd = startMs !== null && endMs !== null && startMs > endMs ? startMs : endMs;
-
-  const filtered = allFeatures.filter((feature) => {
-    const rawDate = feature.properties?.work_submitted_date;
-    const featureTime = new Date(rawDate).getTime();
-    if (Number.isNaN(featureTime)) return false;
-    if (normalizedStart !== null && featureTime < normalizedStart) return false;
-    if (normalizedEnd !== null && featureTime > normalizedEnd) return false;
-    return true;
-  });
-
-  renderEncampments(filtered);
-  if (startMs !== null && endMs !== null && startMs > endMs) {
-    setFilterSummary(endValue, startValue);
-  } else {
-    setFilterSummary(startValue, endValue);
-  }
-}
-
 function renderEncampments(features) {
   if (currentLayer) {
     clusters.removeLayer(currentLayer);
   }
 
-  const stats = {};
-  let pointCount = 0;
+  const sourceCounts = {
+    encampment: 0,
+    "311": 0,
+  };
 
   currentLayer = L.geoJSON(
     { type: "FeatureCollection", features },
     {
       pointToLayer(feature, latlng) {
-        const type = feature.properties?.type_of_cleanup || "Unknown";
-        stats[type] = (stats[type] || 0) + 1;
-        pointCount += 1;
-        return L.circleMarker(latlng, markerForType(type));
+        const source = feature.properties?._source || "encampment";
+        sourceCounts[source] = (sourceCounts[source] || 0) + 1;
+        return L.circleMarker(latlng, markerForSource(source));
       },
       onEachFeature(feature, featureLayer) {
         featureLayer.bindPopup(popupContent(feature.properties || {}));
@@ -180,12 +174,39 @@ function renderEncampments(features) {
     map.addLayer(clusters);
   }
 
-  renderStats(stats, pointCount);
+  renderStats(features.length, sourceCounts);
 
   const bounds = currentLayer.getBounds();
   if (!hasFittedToData && bounds.isValid()) {
     map.fitBounds(bounds, { padding: [20, 20] });
     hasFittedToData = true;
+  }
+}
+
+function applyFilters() {
+  const { startValue, endValue, startMs, endMs } = dateBoundsFromInputs();
+  const sourceValue = document.getElementById("filter-source").value;
+  const normalizedStart = startMs !== null && endMs !== null && startMs > endMs ? endMs : startMs;
+  const normalizedEnd = startMs !== null && endMs !== null && startMs > endMs ? startMs : endMs;
+
+  const filtered = allFeatures.filter((feature) => {
+    const source = feature.properties?._source;
+    if (sourceValue !== "both" && source !== sourceValue) {
+      return false;
+    }
+
+    const featureTime = new Date(feature.properties?._date).getTime();
+    if (Number.isNaN(featureTime)) return false;
+    if (normalizedStart !== null && featureTime < normalizedStart) return false;
+    if (normalizedEnd !== null && featureTime > normalizedEnd) return false;
+    return true;
+  });
+
+  renderEncampments(filtered);
+  if (startMs !== null && endMs !== null && startMs > endMs) {
+    setFilterSummary(endValue, startValue, sourceValue);
+  } else {
+    setFilterSummary(startValue, endValue, sourceValue);
   }
 }
 
@@ -206,34 +227,71 @@ function setTheme(theme) {
   document.getElementById("theme-light").classList.toggle("is-active", !isDark);
 }
 
-async function loadEncampments() {
-  const response = await fetch(GEOJSON_FILE);
+async function loadGeojson(path) {
+  const response = await fetch(path);
   if (!response.ok) {
-    throw new Error(`Unable to load ${GEOJSON_FILE}: HTTP ${response.status}`);
+    throw new Error(`Unable to load ${path}: HTTP ${response.status}`);
   }
+  return response.json();
+}
 
-  const data = await response.json();
-  allFeatures = data.features || [];
-  renderEncampments(allFeatures);
+function normalizeEncampmentFeature(feature) {
+  return {
+    type: "Feature",
+    geometry: feature.geometry,
+    properties: {
+      ...feature.properties,
+      _source: "encampment",
+      _date: feature.properties?.work_submitted_date,
+    },
+  };
+}
 
-  const dates = allFeatures
-    .map((feature) => toInputDate(feature.properties?.work_submitted_date))
+function normalize311Feature(feature) {
+  return {
+    type: "Feature",
+    geometry: feature.geometry,
+    properties: {
+      ...feature.properties,
+      _source: "311",
+      _date: feature.properties?.created_at,
+    },
+  };
+}
+
+function updateDateInputBounds(features) {
+  const dates = features
+    .map((feature) => toInputDate(feature.properties?._date))
     .filter(Boolean)
     .sort();
 
-  if (dates.length) {
-    const minDate = dates[0];
-    const maxDate = dates[dates.length - 1];
-    const startInput = document.getElementById("filter-start");
-    const endInput = document.getElementById("filter-end");
-    startInput.min = minDate;
-    startInput.max = maxDate;
-    endInput.min = minDate;
-    endInput.max = maxDate;
-  }
+  if (!dates.length) return;
+
+  const minDate = dates[0];
+  const maxDate = dates[dates.length - 1];
+  const startInput = document.getElementById("filter-start");
+  const endInput = document.getElementById("filter-end");
+  startInput.min = minDate;
+  startInput.max = maxDate;
+  endInput.min = minDate;
+  endInput.max = maxDate;
 }
 
-loadEncampments().catch((err) => {
+async function loadData() {
+  const [encampmentData, reportsData] = await Promise.all([
+    loadGeojson(ENCAMPMENT_FILE),
+    loadGeojson(REPORTS_311_FILE),
+  ]);
+
+  const encampmentFeatures = (encampmentData.features || []).map(normalizeEncampmentFeature);
+  const reportsFeatures = (reportsData.features || []).map(normalize311Feature);
+  allFeatures = [...encampmentFeatures, ...reportsFeatures];
+
+  updateDateInputBounds(allFeatures);
+  applyFilters();
+}
+
+loadData().catch((err) => {
   const statsEl = document.getElementById("stats");
   statsEl.innerHTML = `<span class="chip">Failed to load data: ${err.message}</span>`;
   // eslint-disable-next-line no-console
@@ -242,13 +300,14 @@ loadEncampments().catch((err) => {
 
 document.getElementById("theme-dark").addEventListener("click", () => setTheme("dark"));
 document.getElementById("theme-light").addEventListener("click", () => setTheme("light"));
-document.getElementById("apply-date-filter").addEventListener("click", applyDateFilter);
+document.getElementById("apply-date-filter").addEventListener("click", applyFilters);
 document.getElementById("clear-date-filter").addEventListener("click", () => {
   document.getElementById("filter-start").value = "";
   document.getElementById("filter-end").value = "";
-  applyDateFilter();
+  applyFilters();
 });
-document.getElementById("filter-start").addEventListener("change", applyDateFilter);
-document.getElementById("filter-end").addEventListener("change", applyDateFilter);
+document.getElementById("filter-start").addEventListener("change", applyFilters);
+document.getElementById("filter-end").addEventListener("change", applyFilters);
+document.getElementById("filter-source").addEventListener("change", applyFilters);
 
 setTheme("dark");

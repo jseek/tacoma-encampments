@@ -107,6 +107,14 @@ p {
   color: var(--text);
 }
 
+.filter-field select {
+  border: 1px solid var(--chip-border);
+  border-radius: 8px;
+  padding: 0.3rem 0.45rem;
+  background: var(--chip-bg);
+  color: var(--text);
+}
+
 .control-btn {
   border: 1px solid var(--chip-border);
   border-radius: 999px;
