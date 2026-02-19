@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tacoma Encampment Cleanup Map</title>
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+      crossorigin=""
+    />
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css"
+    />
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body class="theme-dark">
+    <main class="layout">
+      <header class="panel">
+        <div class="panel-top">
+          <h1>Tacoma Encampment Cleanup Tracking</h1>
+          <div class="theme-switch" role="group" aria-label="Map theme">
+            <button id="theme-dark" class="theme-btn is-active" type="button">
+              Dark
+            </button>
+            <button id="theme-light" class="theme-btn" type="button">
+              Light
+            </button>
+          </div>
+        </div>
+        <div class="filters" aria-label="Date filters">
+          <label class="filter-field" for="filter-start">
+            From
+            <input id="filter-start" type="date" />
+          </label>
+          <label class="filter-field" for="filter-end">
+            To
+            <input id="filter-end" type="date" />
+          </label>
+          <button id="apply-date-filter" class="control-btn" type="button">
+            Apply
+          </button>
+          <button id="clear-date-filter" class="control-btn" type="button">
+            Clear
+          </button>
+          <span id="filter-summary" class="filter-summary">All dates</span>
+        </div>
+        <div id="stats" class="stats"></div>
+      </header>
+      <section id="map" aria-label="Encampment map"></section>
+    </main>
+
+    <script
+      src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+      integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+      crossorigin=""
+    ></script>
+    <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
