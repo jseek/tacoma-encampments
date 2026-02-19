@@ -1,6 +1,7 @@
 const ENCAMPMENT_FILE = "data/ES_Encampment_Cleaning_Tracking.geojson";
 const REPORTS_311_FILE = "data/SeeClickFix_Requests.geojson";
 const POLICE_BLOCKS_FILE = "data/Police_Reporting_Blocks.geojson";
+const CITY_COUNCIL_FILE = "data/City_Council_Districts.geojson";
 
 const sourcePalette = {
   encampment: "#00d1ff",
@@ -36,6 +37,8 @@ let allFeatures = [];
 let currentLayer = null;
 let policeBlocksData = null;
 let policeBlocksLayer = null;
+let cityCouncilData = null;
+let cityCouncilLayer = null;
 let hasFittedToData = false;
 
 function byId(id) {
@@ -172,6 +175,11 @@ function clearActiveLayers() {
   if (policeBlocksLayer) {
     map.removeLayer(policeBlocksLayer);
     policeBlocksLayer = null;
+  }
+
+  if (cityCouncilLayer) {
+    map.removeLayer(cityCouncilLayer);
+    cityCouncilLayer = null;
   }
 }
 
@@ -354,10 +362,84 @@ function renderPoliceBlocks(features) {
   }
 }
 
+function renderCityCouncilDistricts(features) {
+  if (!cityCouncilData) return;
+
+  clearActiveLayers();
+
+  const sourceCounts = {
+    encampment: 0,
+    "311": 0,
+  };
+
+  const countsByDistrictId = {};
+
+  for (const feature of features) {
+    const source = feature.properties?._source || "encampment";
+    sourceCounts[source] = (sourceCounts[source] || 0) + 1;
+
+    const districtId = feature.properties?._councilObjectId;
+    if (!districtId) continue;
+    countsByDistrictId[districtId] = (countsByDistrictId[districtId] || 0) + 1;
+  }
+
+  const maxCount = Math.max(0, ...Object.values(countsByDistrictId));
+
+  const decoratedDistricts = {
+    type: "FeatureCollection",
+    features: (cityCouncilData.features || []).map((feature) => {
+      const districtId = feature.properties?.objectid;
+      const count = countsByDistrictId[districtId] || 0;
+      return {
+        ...feature,
+        properties: {
+          ...feature.properties,
+          _count: count,
+        },
+      };
+    }),
+  };
+
+  cityCouncilLayer = L.geoJSON(decoratedDistricts, {
+    style(feature) {
+      const count = feature?.properties?._count || 0;
+      return {
+        color: "#8ea3bd",
+        weight: 1.2,
+        fillOpacity: count ? 0.58 : 0.14,
+        fillColor: getBlockFillColor(count, maxCount),
+      };
+    },
+    onEachFeature(feature, layer) {
+      const props = feature.properties || {};
+      layer.bindPopup(`
+        <dl class="popup-grid">
+          <dt>Council District</dt><dd>${toDisplay(props.district || props.district_text)}</dd>
+          <dt>Councilmember</dt><dd>${toDisplay(props.councilmember)}</dd>
+          <dt>Issues/Cleanups</dt><dd>${(props._count || 0).toLocaleString()}</dd>
+        </dl>
+      `);
+    },
+  });
+
+  cityCouncilLayer.addTo(map);
+  renderStats(features.length, sourceCounts);
+
+  const bounds = cityCouncilLayer.getBounds();
+  if (!hasFittedToData && bounds.isValid()) {
+    map.fitBounds(bounds, { padding: [20, 20] });
+    hasFittedToData = true;
+  }
+}
+
 function renderCurrentMap(filteredFeatures) {
   const mapType = valueById("map-type", "points");
   if (mapType === "police-blocks") {
     renderPoliceBlocks(filteredFeatures);
+    return;
+  }
+  if (mapType === "city-council") {
+    renderCityCouncilDistricts(filteredFeatures);
     return;
   }
 
@@ -490,19 +572,51 @@ function assignBlocksToFeatures(features, blocksFeatureCollection) {
   }
 }
 
+function assignCouncilDistrictsToFeatures(features, councilFeatureCollection) {
+  const districts = (councilFeatureCollection.features || []).map((feature) => {
+    const bbox = bboxFromCoordinates(feature.geometry?.coordinates || []);
+    return {
+      objectId: feature.properties?.objectid,
+      geometry: feature.geometry,
+      bbox,
+    };
+  });
+
+  for (const feature of features) {
+    const coords = feature.geometry?.coordinates;
+    if (!Array.isArray(coords) || coords.length < 2) continue;
+
+    const [lon, lat] = coords;
+    let matchedDistrictId = null;
+
+    for (const district of districts) {
+      const [minX, minY, maxX, maxY] = district.bbox;
+      if (lon < minX || lon > maxX || lat < minY || lat > maxY) continue;
+      if (!pointInGeometry([lon, lat], district.geometry)) continue;
+      matchedDistrictId = district.objectId;
+      break;
+    }
+
+    feature.properties._councilObjectId = matchedDistrictId;
+  }
+}
+
 async function loadData() {
-  const [encampmentData, reportsData, blocksData] = await Promise.all([
+  const [encampmentData, reportsData, blocksData, councilData] = await Promise.all([
     loadGeojson(ENCAMPMENT_FILE),
     loadGeojson(REPORTS_311_FILE),
     loadGeojson(POLICE_BLOCKS_FILE),
+    loadGeojson(CITY_COUNCIL_FILE),
   ]);
 
   const encampmentFeatures = (encampmentData.features || []).map(normalizeEncampmentFeature);
   const reportsFeatures = (reportsData.features || []).map(normalize311Feature);
   allFeatures = [...encampmentFeatures, ...reportsFeatures];
   policeBlocksData = blocksData;
+  cityCouncilData = councilData;
 
   assignBlocksToFeatures(allFeatures, blocksData);
+  assignCouncilDistrictsToFeatures(allFeatures, councilData);
   updateDateInputBounds(allFeatures);
   applyFilters();
 }
