@@ -83,6 +83,19 @@ p {
   flex-wrap: wrap;
 }
 
+.highlight-stat {
+  margin-top: 0.55rem;
+  display: inline-flex;
+  align-items: center;
+  padding: 0.35rem 0.7rem;
+  border-radius: 10px;
+  border: 1px solid var(--chip-border);
+  background: color-mix(in srgb, var(--chip-bg) 92%, transparent);
+  color: var(--text);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
 .filters {
   margin-top: 0.55rem;
   display: flex;

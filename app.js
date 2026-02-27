@@ -112,6 +112,27 @@ function popupContent(properties) {
   `;
 }
 
+
+function recentCleanupCount(features, days = 30) {
+  const now = Date.now();
+  const windowStart = now - days * 24 * 60 * 60 * 1000;
+
+  return features.reduce((count, feature) => {
+    if (feature.properties?._source !== "encampment") return count;
+    const time = new Date(feature.properties?._date).getTime();
+    if (Number.isNaN(time)) return count;
+    return time >= windowStart && time <= now ? count + 1 : count;
+  }, 0);
+}
+
+function renderRecentCleanupCount(features) {
+  const recentEl = byId("recent-cleanups");
+  if (!recentEl) return;
+
+  const count = recentCleanupCount(features, 30);
+  recentEl.textContent = `Encampments cleaned in the past 30 days: ${count.toLocaleString()}`;
+}
+
 function renderStats(total, sourceCounts) {
   const statsEl = byId("stats");
   if (!statsEl) return;
@@ -217,6 +238,7 @@ function renderEncampments(features) {
   map.addLayer(clusters);
 
   renderStats(features.length, sourceCounts);
+  renderRecentCleanupCount(features);
 
   const bounds = currentLayer.getBounds();
   if (!hasFittedToData && bounds.isValid()) {
@@ -362,6 +384,7 @@ function renderPoliceBlocks(features) {
 
   policeBlocksLayer.addTo(map);
   renderStats(features.length, sourceCounts);
+  renderRecentCleanupCount(features);
 
   const bounds = policeBlocksLayer.getBounds();
   if (!hasFittedToData && bounds.isValid()) {
@@ -432,6 +455,7 @@ function renderCityCouncilDistricts(features) {
 
   cityCouncilLayer.addTo(map);
   renderStats(features.length, sourceCounts);
+  renderRecentCleanupCount(features);
 
   const bounds = cityCouncilLayer.getBounds();
   if (!hasFittedToData && bounds.isValid()) {
@@ -502,6 +526,7 @@ function renderNeighborhoodCouncilDistricts(features) {
 
   neighborhoodCouncilLayer.addTo(map);
   renderStats(features.length, sourceCounts);
+  renderRecentCleanupCount(features);
 
   const bounds = neighborhoodCouncilLayer.getBounds();
   if (!hasFittedToData && bounds.isValid()) {
