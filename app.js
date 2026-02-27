@@ -43,6 +43,8 @@ let cityCouncilLayer = null;
 let neighborhoodCouncilData = null;
 let neighborhoodCouncilLayer = null;
 let hasFittedToData = false;
+const policeBlockNamesById = new Map();
+const councilDistrictNamesById = new Map();
 
 function byId(id) {
   return document.getElementById(id);
@@ -167,17 +169,27 @@ function renderRecentCleanupTable(features) {
 
   const cleanups = recentEncampmentCleanups(features);
   if (!cleanups.length) {
-    tbody.innerHTML = '<tr><td colspan="5">No encampment cleanups for the current filter.</td></tr>';
+    tbody.innerHTML =
+      '<tr><td colspan="7">No encampment cleanups for the current filter.</td></tr>';
     return;
   }
 
   tbody.innerHTML = cleanups
     .map((feature) => {
       const properties = feature.properties || {};
+      const [lon, lat] = feature.geometry?.coordinates || [];
+      const blockLabel =
+        policeBlockNamesById.get(properties._blockObjectId) ||
+        (properties._blockObjectId ? `Block ${properties._blockObjectId}` : "N/A");
+      const districtLabel =
+        councilDistrictNamesById.get(properties._councilObjectId) ||
+        (properties._councilObjectId ? `District ${properties._councilObjectId}` : "N/A");
       return `
-        <tr>
+        <tr class="cleanup-row" data-lat="${lat}" data-lon="${lon}">
           <td>${toDate(properties._date)}</td>
           <td>${toDisplay(properties.type_of_cleanup)}</td>
+          <td>${toDisplay(districtLabel)}</td>
+          <td>${toDisplay(blockLabel)}</td>
           <td>${toDate(properties.created_date)}</td>
           <td>${toDisplay(properties.created_user)}</td>
           <td>${toDisplay(properties.untitled_question_2_other)}</td>
@@ -185,6 +197,15 @@ function renderRecentCleanupTable(features) {
       `;
     })
     .join("");
+
+  for (const row of tbody.querySelectorAll("tr.cleanup-row")) {
+    row.addEventListener("click", () => {
+      const lat = Number(row.dataset.lat);
+      const lon = Number(row.dataset.lon);
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+      map.setView([lat, lon], Math.max(map.getZoom(), 15), { animate: true });
+    });
+  }
 }
 function renderRecentCleanupCount(stats) {
   const recentEl = byId("recent-cleanups");
@@ -758,8 +779,13 @@ function updateDateInputBounds(features) {
 function assignBlocksToFeatures(features, blocksFeatureCollection) {
   const blocks = (blocksFeatureCollection.features || []).map((feature) => {
     const bbox = bboxFromCoordinates(feature.geometry?.coordinates || []);
+    const objectId = feature.properties?.objectid;
+    const blockName = feature.properties?.reportingblock || feature.properties?.sectorsubsectorstring;
+    if (objectId) {
+      policeBlockNamesById.set(objectId, blockName || `Block ${objectId}`);
+    }
     return {
-      objectId: feature.properties?.objectid,
+      objectId,
       geometry: feature.geometry,
       bbox,
     };
@@ -787,8 +813,13 @@ function assignBlocksToFeatures(features, blocksFeatureCollection) {
 function assignCouncilDistrictsToFeatures(features, councilFeatureCollection) {
   const districts = (councilFeatureCollection.features || []).map((feature) => {
     const bbox = bboxFromCoordinates(feature.geometry?.coordinates || []);
+    const objectId = feature.properties?.objectid;
+    const districtName = feature.properties?.district || feature.properties?.district_text;
+    if (objectId) {
+      councilDistrictNamesById.set(objectId, districtName || `District ${objectId}`);
+    }
     return {
-      objectId: feature.properties?.objectid,
+      objectId,
       geometry: feature.geometry,
       bbox,
     };

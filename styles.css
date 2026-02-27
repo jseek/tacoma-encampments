@@ -258,3 +258,11 @@ p {
   background: var(--chip-bg);
   color: var(--text);
 }
+
+#recent-cleanups-table tbody tr.cleanup-row {
+  cursor: pointer;
+}
+
+#recent-cleanups-table tbody tr.cleanup-row:hover {
+  background: color-mix(in srgb, var(--chip-bg) 70%, #4a6fa5 30%);
+}
