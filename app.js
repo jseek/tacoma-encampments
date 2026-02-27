@@ -113,24 +113,42 @@ function popupContent(properties) {
 }
 
 
-function recentCleanupCount(features, days = 30) {
+function summarizeFeatures(features, days = 30) {
   const now = Date.now();
   const windowStart = now - days * 24 * 60 * 60 * 1000;
+  const sourceCounts = {
+    encampment: 0,
+    "311": 0,
+  };
 
-  return features.reduce((count, feature) => {
-    if (feature.properties?._source !== "encampment") return count;
+  let recentEncampmentCount = 0;
+
+  for (const feature of features) {
+    const source = feature.properties?._source || "encampment";
+    sourceCounts[source] = (sourceCounts[source] || 0) + 1;
+
+    if (source !== "encampment") continue;
     const time = new Date(feature.properties?._date).getTime();
-    if (Number.isNaN(time)) return count;
-    return time >= windowStart && time <= now ? count + 1 : count;
-  }, 0);
+    if (Number.isNaN(time)) continue;
+    if (time >= windowStart && time <= now) {
+      recentEncampmentCount += 1;
+    }
+  }
+
+  return {
+    total: features.length,
+    sourceCounts,
+    recentEncampmentCount,
+    now,
+    windowStart,
+  };
 }
 
-function renderRecentCleanupCount(features) {
+function renderRecentCleanupCount(stats) {
   const recentEl = byId("recent-cleanups");
   if (!recentEl) return;
 
-  const count = recentCleanupCount(features, 30);
-  recentEl.textContent = `Encampments cleaned in the past 30 days: ${count.toLocaleString()}`;
+  recentEl.textContent = `Encampments cleaned in the past 30 days: ${stats.recentEncampmentCount.toLocaleString()}`;
 }
 
 function renderStats(total, sourceCounts) {
@@ -215,17 +233,13 @@ function clearActiveLayers() {
 function renderEncampments(features) {
   clearActiveLayers();
 
-  const sourceCounts = {
-    encampment: 0,
-    "311": 0,
-  };
+  const stats = summarizeFeatures(features);
 
   currentLayer = L.geoJSON(
     { type: "FeatureCollection", features },
     {
       pointToLayer(feature, latlng) {
         const source = feature.properties?._source || "encampment";
-        sourceCounts[source] = (sourceCounts[source] || 0) + 1;
         return L.circleMarker(latlng, markerForSource(source));
       },
       onEachFeature(feature, featureLayer) {
@@ -237,8 +251,8 @@ function renderEncampments(features) {
   clusters.addLayer(currentLayer);
   map.addLayer(clusters);
 
-  renderStats(features.length, sourceCounts);
-  renderRecentCleanupCount(features);
+  renderStats(stats.total, stats.sourceCounts);
+  renderRecentCleanupCount(stats);
 
   const bounds = currentLayer.getBounds();
   if (!hasFittedToData && bounds.isValid()) {
@@ -327,20 +341,28 @@ function renderPoliceBlocks(features) {
 
   clearActiveLayers();
 
-  const sourceCounts = {
-    encampment: 0,
-    "311": 0,
-  };
-
+  const stats = summarizeFeatures(features);
   const countsByBlockId = {};
+  const areaStatsByBlockId = {};
 
   for (const feature of features) {
     const source = feature.properties?._source || "encampment";
-    sourceCounts[source] = (sourceCounts[source] || 0) + 1;
-
     const blockId = feature.properties?._blockObjectId;
     if (!blockId) continue;
+
     countsByBlockId[blockId] = (countsByBlockId[blockId] || 0) + 1;
+
+    if (!areaStatsByBlockId[blockId]) {
+      areaStatsByBlockId[blockId] = { encampmentTotal: 0, encampmentRecent30: 0 };
+    }
+
+    if (source === "encampment") {
+      areaStatsByBlockId[blockId].encampmentTotal += 1;
+      const time = new Date(feature.properties?._date).getTime();
+      if (!Number.isNaN(time) && time >= stats.windowStart && time <= stats.now) {
+        areaStatsByBlockId[blockId].encampmentRecent30 += 1;
+      }
+    }
   }
 
   const maxCount = Math.max(0, ...Object.values(countsByBlockId));
@@ -350,11 +372,14 @@ function renderPoliceBlocks(features) {
     features: (policeBlocksData.features || []).map((feature) => {
       const blockId = feature.properties?.objectid;
       const count = countsByBlockId[blockId] || 0;
+      const areaStats = areaStatsByBlockId[blockId] || { encampmentTotal: 0, encampmentRecent30: 0 };
       return {
         ...feature,
         properties: {
           ...feature.properties,
           _count: count,
+          _encampmentTotal: areaStats.encampmentTotal,
+          _encampmentRecent30: areaStats.encampmentRecent30,
         },
       };
     }),
@@ -377,14 +402,16 @@ function renderPoliceBlocks(features) {
           <dt>Reporting Block</dt><dd>${toDisplay(props.reportingblock)}</dd>
           <dt>Sector-Subsector</dt><dd>${toDisplay(props.sectorsubsectorstring)}</dd>
           <dt>Issues/Cleanups</dt><dd>${(props._count || 0).toLocaleString()}</dd>
+          <dt>Encampments (30 days)</dt><dd>${(props._encampmentRecent30 || 0).toLocaleString()}</dd>
+          <dt>Encampments (filtered)</dt><dd>${(props._encampmentTotal || 0).toLocaleString()}</dd>
         </dl>
       `);
     },
   });
 
   policeBlocksLayer.addTo(map);
-  renderStats(features.length, sourceCounts);
-  renderRecentCleanupCount(features);
+  renderStats(stats.total, stats.sourceCounts);
+  renderRecentCleanupCount(stats);
 
   const bounds = policeBlocksLayer.getBounds();
   if (!hasFittedToData && bounds.isValid()) {
@@ -398,20 +425,28 @@ function renderCityCouncilDistricts(features) {
 
   clearActiveLayers();
 
-  const sourceCounts = {
-    encampment: 0,
-    "311": 0,
-  };
-
+  const stats = summarizeFeatures(features);
   const countsByDistrictId = {};
+  const areaStatsByDistrictId = {};
 
   for (const feature of features) {
     const source = feature.properties?._source || "encampment";
-    sourceCounts[source] = (sourceCounts[source] || 0) + 1;
-
     const districtId = feature.properties?._councilObjectId;
     if (!districtId) continue;
+
     countsByDistrictId[districtId] = (countsByDistrictId[districtId] || 0) + 1;
+
+    if (!areaStatsByDistrictId[districtId]) {
+      areaStatsByDistrictId[districtId] = { encampmentTotal: 0, encampmentRecent30: 0 };
+    }
+
+    if (source === "encampment") {
+      areaStatsByDistrictId[districtId].encampmentTotal += 1;
+      const time = new Date(feature.properties?._date).getTime();
+      if (!Number.isNaN(time) && time >= stats.windowStart && time <= stats.now) {
+        areaStatsByDistrictId[districtId].encampmentRecent30 += 1;
+      }
+    }
   }
 
   const maxCount = Math.max(0, ...Object.values(countsByDistrictId));
@@ -421,11 +456,14 @@ function renderCityCouncilDistricts(features) {
     features: (cityCouncilData.features || []).map((feature) => {
       const districtId = feature.properties?.objectid;
       const count = countsByDistrictId[districtId] || 0;
+      const areaStats = areaStatsByDistrictId[districtId] || { encampmentTotal: 0, encampmentRecent30: 0 };
       return {
         ...feature,
         properties: {
           ...feature.properties,
           _count: count,
+          _encampmentTotal: areaStats.encampmentTotal,
+          _encampmentRecent30: areaStats.encampmentRecent30,
         },
       };
     }),
@@ -448,14 +486,16 @@ function renderCityCouncilDistricts(features) {
           <dt>Council District</dt><dd>${toDisplay(props.district || props.district_text)}</dd>
           <dt>Councilmember</dt><dd>${toDisplay(props.councilmember)}</dd>
           <dt>Issues/Cleanups</dt><dd>${(props._count || 0).toLocaleString()}</dd>
+          <dt>Encampments (30 days)</dt><dd>${(props._encampmentRecent30 || 0).toLocaleString()}</dd>
+          <dt>Encampments (filtered)</dt><dd>${(props._encampmentTotal || 0).toLocaleString()}</dd>
         </dl>
       `);
     },
   });
 
   cityCouncilLayer.addTo(map);
-  renderStats(features.length, sourceCounts);
-  renderRecentCleanupCount(features);
+  renderStats(stats.total, stats.sourceCounts);
+  renderRecentCleanupCount(stats);
 
   const bounds = cityCouncilLayer.getBounds();
   if (!hasFittedToData && bounds.isValid()) {
@@ -469,20 +509,28 @@ function renderNeighborhoodCouncilDistricts(features) {
 
   clearActiveLayers();
 
-  const sourceCounts = {
-    encampment: 0,
-    "311": 0,
-  };
-
+  const stats = summarizeFeatures(features);
   const countsByNeighborhoodId = {};
+  const areaStatsByNeighborhoodId = {};
 
   for (const feature of features) {
     const source = feature.properties?._source || "encampment";
-    sourceCounts[source] = (sourceCounts[source] || 0) + 1;
-
     const neighborhoodId = feature.properties?._neighborhoodObjectId;
     if (!neighborhoodId) continue;
+
     countsByNeighborhoodId[neighborhoodId] = (countsByNeighborhoodId[neighborhoodId] || 0) + 1;
+
+    if (!areaStatsByNeighborhoodId[neighborhoodId]) {
+      areaStatsByNeighborhoodId[neighborhoodId] = { encampmentTotal: 0, encampmentRecent30: 0 };
+    }
+
+    if (source === "encampment") {
+      areaStatsByNeighborhoodId[neighborhoodId].encampmentTotal += 1;
+      const time = new Date(feature.properties?._date).getTime();
+      if (!Number.isNaN(time) && time >= stats.windowStart && time <= stats.now) {
+        areaStatsByNeighborhoodId[neighborhoodId].encampmentRecent30 += 1;
+      }
+    }
   }
 
   const maxCount = Math.max(0, ...Object.values(countsByNeighborhoodId));
@@ -492,11 +540,17 @@ function renderNeighborhoodCouncilDistricts(features) {
     features: (neighborhoodCouncilData.features || []).map((feature) => {
       const neighborhoodId = feature.properties?.objectid_1;
       const count = countsByNeighborhoodId[neighborhoodId] || 0;
+      const areaStats = areaStatsByNeighborhoodId[neighborhoodId] || {
+        encampmentTotal: 0,
+        encampmentRecent30: 0,
+      };
       return {
         ...feature,
         properties: {
           ...feature.properties,
           _count: count,
+          _encampmentTotal: areaStats.encampmentTotal,
+          _encampmentRecent30: areaStats.encampmentRecent30,
         },
       };
     }),
@@ -519,14 +573,16 @@ function renderNeighborhoodCouncilDistricts(features) {
           <dt>Neighborhood Council</dt><dd>${toDisplay(props.name)}</dd>
           <dt>District Name</dt><dd>${toDisplay(props.neighborhood)}</dd>
           <dt>Issues/Cleanups</dt><dd>${(props._count || 0).toLocaleString()}</dd>
+          <dt>Encampments (30 days)</dt><dd>${(props._encampmentRecent30 || 0).toLocaleString()}</dd>
+          <dt>Encampments (filtered)</dt><dd>${(props._encampmentTotal || 0).toLocaleString()}</dd>
         </dl>
       `);
     },
   });
 
   neighborhoodCouncilLayer.addTo(map);
-  renderStats(features.length, sourceCounts);
-  renderRecentCleanupCount(features);
+  renderStats(stats.total, stats.sourceCounts);
+  renderRecentCleanupCount(stats);
 
   const bounds = neighborhoodCouncilLayer.getBounds();
   if (!hasFittedToData && bounds.isValid()) {
