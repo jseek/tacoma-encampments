@@ -144,6 +144,48 @@ function summarizeFeatures(features, days = 30) {
   };
 }
 
+
+function recentEncampmentCleanups(features, limit = 25) {
+  return features
+    .filter((feature) => feature.properties?._source === "encampment")
+    .map((feature) => {
+      const timestamp = new Date(feature.properties?._date).getTime();
+      return {
+        feature,
+        timestamp,
+      };
+    })
+    .filter((item) => !Number.isNaN(item.timestamp))
+    .sort((a, b) => b.timestamp - a.timestamp)
+    .slice(0, limit)
+    .map((item) => item.feature);
+}
+
+function renderRecentCleanupTable(features) {
+  const tbody = byId("recent-cleanups-body");
+  if (!tbody) return;
+
+  const cleanups = recentEncampmentCleanups(features);
+  if (!cleanups.length) {
+    tbody.innerHTML = '<tr><td colspan="5">No encampment cleanups for the current filter.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = cleanups
+    .map((feature) => {
+      const properties = feature.properties || {};
+      return `
+        <tr>
+          <td>${toDate(properties._date)}</td>
+          <td>${toDisplay(properties.type_of_cleanup)}</td>
+          <td>${toDate(properties.created_date)}</td>
+          <td>${toDisplay(properties.created_user)}</td>
+          <td>${toDisplay(properties.untitled_question_2_other)}</td>
+        </tr>
+      `;
+    })
+    .join("");
+}
 function renderRecentCleanupCount(stats) {
   const recentEl = byId("recent-cleanups");
   if (!recentEl) return;
@@ -629,6 +671,7 @@ function applyFilters() {
   });
 
   renderCurrentMap(filtered);
+  renderRecentCleanupTable(filtered);
   if (startMs !== null && endMs !== null && startMs > endMs) {
     setFilterSummary(endValue, startValue, sourceValue);
   } else {
