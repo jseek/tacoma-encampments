@@ -706,6 +706,12 @@ async function loadGeojson(path) {
   return response.json();
 }
 
+function yieldToBrowser() {
+  return new Promise((resolve) => {
+    setTimeout(resolve, 0);
+  });
+}
+
 function normalizeEncampmentFeature(feature) {
   return {
     type: "Feature",
@@ -837,25 +843,52 @@ function assignNeighborhoodDistrictsToFeatures(features, neighborhoodFeatureColl
 }
 
 async function loadData() {
-  const [encampmentData, reportsData, blocksData, councilData, neighborhoodData] = await Promise.all([
+  const [encampmentData, reportsData] = await Promise.all([
     loadGeojson(ENCAMPMENT_FILE),
     loadGeojson(REPORTS_311_FILE),
-    loadGeojson(POLICE_BLOCKS_FILE),
-    loadGeojson(CITY_COUNCIL_FILE),
-    loadGeojson(NEIGHBORHOOD_COUNCIL_FILE),
   ]);
 
   const encampmentFeatures = (encampmentData.features || []).map(normalizeEncampmentFeature);
   const reportsFeatures = (reportsData.features || []).map(normalize311Feature);
   allFeatures = [...encampmentFeatures, ...reportsFeatures];
-  policeBlocksData = blocksData;
-  cityCouncilData = councilData;
-  neighborhoodCouncilData = neighborhoodData;
-
-  assignBlocksToFeatures(allFeatures, blocksData);
-  assignCouncilDistrictsToFeatures(allFeatures, councilData);
-  assignNeighborhoodDistrictsToFeatures(allFeatures, neighborhoodData);
   updateDateInputBounds(allFeatures);
+  applyFilters();
+
+  const [blocksResult, councilResult, neighborhoodResult] = await Promise.allSettled([
+    loadGeojson(POLICE_BLOCKS_FILE),
+    loadGeojson(CITY_COUNCIL_FILE),
+    loadGeojson(NEIGHBORHOOD_COUNCIL_FILE),
+  ]);
+
+  if (blocksResult.status === "fulfilled") {
+    policeBlocksData = blocksResult.value;
+    await yieldToBrowser();
+    assignBlocksToFeatures(allFeatures, policeBlocksData);
+  } else {
+    // eslint-disable-next-line no-console
+    console.warn(`Unable to load police blocks layer: ${blocksResult.reason?.message || blocksResult.reason}`);
+  }
+
+  if (councilResult.status === "fulfilled") {
+    cityCouncilData = councilResult.value;
+    await yieldToBrowser();
+    assignCouncilDistrictsToFeatures(allFeatures, cityCouncilData);
+  } else {
+    // eslint-disable-next-line no-console
+    console.warn(`Unable to load city council layer: ${councilResult.reason?.message || councilResult.reason}`);
+  }
+
+  if (neighborhoodResult.status === "fulfilled") {
+    neighborhoodCouncilData = neighborhoodResult.value;
+    await yieldToBrowser();
+    assignNeighborhoodDistrictsToFeatures(allFeatures, neighborhoodCouncilData);
+  } else {
+    // eslint-disable-next-line no-console
+    console.warn(
+      `Unable to load neighborhood council layer: ${neighborhoodResult.reason?.message || neighborhoodResult.reason}`
+    );
+  }
+
   applyFilters();
 }
 
