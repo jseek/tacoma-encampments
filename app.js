@@ -3,6 +3,10 @@ const REPORTS_311_FILE = "data/SeeClickFix_Requests.geojson";
 const POLICE_BLOCKS_FILE = "data/Police_Reporting_Blocks.geojson";
 const CITY_COUNCIL_FILE = "data/City_Council_Districts.geojson";
 const NEIGHBORHOOD_COUNCIL_FILE = "data/Neighborhood_Council_Districts.geojson";
+const CRIME_QUERY_URL =
+  "https://services3.arcgis.com/SCwJH1pD8WSn5T5y/arcgis/rest/services/Crime_Data/FeatureServer/0/query";
+const CRIME_RADIUS_FEET = 1000;
+const CRIME_WINDOW_DAYS = 30;
 
 const sourcePalette = {
   encampment: "#00d1ff",
@@ -110,8 +114,109 @@ function popupContent(properties) {
       <dt>Created User</dt><dd>${toDisplay(properties.created_user)}</dd>
       <dt>Other Notes</dt><dd>${toDisplay(properties.untitled_question_2_other)}</dd>
       <dt>Object ID</dt><dd>${toDisplay(properties.OBJECTID)}</dd>
+      <dt>Crime Beater</dt><dd id="crime-beater-${toDisplay(properties.OBJECTID)}">Loading...</dd>
     </dl>
   `;
+}
+
+
+function startOfDay(value) {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  parsed.setHours(0, 0, 0, 0);
+  return parsed;
+}
+
+function toEpochMs(value) {
+  return value.getTime();
+}
+
+function toMeters(feet) {
+  return feet * 0.3048;
+}
+
+function buildCrimeWhereClause(startDate, endDate) {
+  const startMs = toEpochMs(startDate);
+  const endMs = toEpochMs(endDate);
+  return `DateOccurred >= ${startMs} AND DateOccurred < ${endMs}`;
+}
+
+async function fetchCrimeCount(lat, lon, whereClause) {
+  const params = new URLSearchParams({
+    f: "json",
+    where: whereClause,
+    returnCountOnly: "true",
+    geometry: `${lon},${lat}`,
+    geometryType: "esriGeometryPoint",
+    spatialRel: "esriSpatialRelIntersects",
+    inSR: "4326",
+    distance: String(toMeters(CRIME_RADIUS_FEET)),
+    units: "esriSRUnit_Meter",
+  });
+
+  const response = await fetch(`${CRIME_QUERY_URL}?${params.toString()}`);
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`);
+  }
+
+  const payload = await response.json();
+  if (payload.error || typeof payload.count !== "number") {
+    throw new Error(payload.error?.message || "Missing crime count in response");
+  }
+
+  return payload.count;
+}
+
+async function crimeBeaterSummary(lat, lon, cleanupDate) {
+  const cleanupStart = startOfDay(cleanupDate);
+  if (!cleanupStart) {
+    return "Crime data unavailable (invalid cleanup date).";
+  }
+
+  const beforeStart = new Date(cleanupStart);
+  beforeStart.setDate(beforeStart.getDate() - CRIME_WINDOW_DAYS);
+
+  const afterEnd = new Date(cleanupStart);
+  afterEnd.setDate(afterEnd.getDate() + CRIME_WINDOW_DAYS);
+
+  const beforeWhere = buildCrimeWhereClause(beforeStart, cleanupStart);
+  const afterWhere = buildCrimeWhereClause(cleanupStart, afterEnd);
+
+  const [beforeCount, afterCount] = await Promise.all([
+    fetchCrimeCount(lat, lon, beforeWhere),
+    fetchCrimeCount(lat, lon, afterWhere),
+  ]);
+
+  return `${beforeCount.toLocaleString()} crimes in the 30 days before cleanup (within 1,000 ft); ${afterCount.toLocaleString()} in the 30 days after cleanup.`;
+}
+
+async function hydrateCrimeBeater(feature, featureLayer) {
+  const source = feature.properties?._source;
+  if (source !== "encampment") return;
+
+  const popup = featureLayer.getPopup();
+  if (!popup) return;
+
+  const objectId = feature.properties?.OBJECTID;
+  const crimeEl = popup.getElement()?.querySelector(`#crime-beater-${objectId}`);
+  if (!crimeEl) return;
+
+  const [lon, lat] = feature.geometry?.coordinates || [];
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+    crimeEl.textContent = "Crime data unavailable (invalid coordinates).";
+    return;
+  }
+
+  crimeEl.textContent = "Loading crime counts...";
+
+  try {
+    const summary = await crimeBeaterSummary(lat, lon, feature.properties?._date);
+    crimeEl.textContent = summary;
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.warn("Crime beater query failed", error);
+    crimeEl.textContent = "Crime data unavailable.";
+  }
 }
 
 
@@ -307,6 +412,9 @@ function renderEncampments(features) {
       },
       onEachFeature(feature, featureLayer) {
         featureLayer.bindPopup(popupContent(feature.properties || {}));
+        featureLayer.on("popupopen", () => {
+          hydrateCrimeBeater(feature, featureLayer);
+        });
       },
     }
   );
