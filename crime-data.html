@@ -18,6 +18,21 @@
 
       <section class="subpage-grid">
         <article class="subpage-card">
+          <h2>ArcGIS URLs</h2>
+          <p>Direct endpoint links are shown here even when ArcGIS returns no records.</p>
+          <ul class="endpoint-list">
+            <li>
+              <strong>Layer metadata:</strong>
+              <a id="crime-metadata-url" href="#" target="_blank" rel="noopener noreferrer"></a>
+            </li>
+            <li>
+              <strong>Sample query:</strong>
+              <a id="crime-sample-url" href="#" target="_blank" rel="noopener noreferrer"></a>
+            </li>
+          </ul>
+        </article>
+
+        <article class="subpage-card">
           <h2>Field Schema</h2>
           <p>
             These are the available fields from the ArcGIS metadata response (name, type, and alias).
@@ -71,6 +86,25 @@
     <script>
       const CRIME_BASE_URL =
         "https://services3.arcgis.com/SCwJH1pD8WSn5T5y/arcgis/rest/services/Crime_Data/FeatureServer/0";
+      const FIELD_METADATA_URL = `${CRIME_BASE_URL}?f=pjson`;
+      const SAMPLE_QUERY_PARAMS = new URLSearchParams({
+        f: "json",
+        where: "1=1",
+        outFields: "DateOccurred,Description,Offense_Category,Address,Sector",
+        orderByFields: "DateOccurred DESC",
+        returnGeometry: "false",
+        resultRecordCount: "8",
+      });
+      const SAMPLE_QUERY_URL = `${CRIME_BASE_URL}/query?${SAMPLE_QUERY_PARAMS.toString()}`;
+
+      function renderEndpointLinks() {
+        const metadataLink = document.getElementById("crime-metadata-url");
+        const sampleLink = document.getElementById("crime-sample-url");
+        metadataLink.href = FIELD_METADATA_URL;
+        metadataLink.textContent = FIELD_METADATA_URL;
+        sampleLink.href = SAMPLE_QUERY_URL;
+        sampleLink.textContent = SAMPLE_QUERY_URL;
+      }
 
       function escapeHtml(value) {
         return String(value ?? "")
@@ -94,8 +128,7 @@
       async function loadFieldMetadata() {
         const fieldsBody = document.getElementById("crime-fields-body");
         try {
-          const url = `${CRIME_BASE_URL}?f=pjson`;
-          const response = await fetch(url);
+          const response = await fetch(FIELD_METADATA_URL);
           if (!response.ok) throw new Error(`HTTP ${response.status}`);
           const payload = await response.json();
 
@@ -126,16 +159,7 @@
         const sampleMeta = document.getElementById("crime-sample-meta");
 
         try {
-          const params = new URLSearchParams({
-            f: "json",
-            where: "1=1",
-            outFields: "DateOccurred,Description,Offense_Category,Address,Sector",
-            orderByFields: "DateOccurred DESC",
-            returnGeometry: "false",
-            resultRecordCount: "8",
-          });
-
-          const response = await fetch(`${CRIME_BASE_URL}/query?${params.toString()}`);
+          const response = await fetch(SAMPLE_QUERY_URL);
           if (!response.ok) throw new Error(`HTTP ${response.status}`);
           const payload = await response.json();
           const features = Array.isArray(payload.features) ? payload.features : [];
@@ -166,6 +190,7 @@
         }
       }
 
+      renderEndpointLinks();
       loadFieldMetadata();
       loadSampleRecords();
     </script>

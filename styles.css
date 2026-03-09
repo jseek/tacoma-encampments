@@ -424,3 +424,16 @@ p {
   margin: 0 0 0.45rem;
   font-size: 1rem;
 }
+
+
+.endpoint-list {
+  margin: 0;
+  padding-left: 1rem;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.endpoint-list a {
+  color: var(--maintenance);
+  overflow-wrap: anywhere;
+}
