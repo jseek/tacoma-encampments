@@ -41,7 +41,7 @@
         <div class="panel-top">
           <div>
             <h1>Tacoma Encampment Cleanup Analysis</h1>
-            <p class="subtitle">Track cleanup volume, source mix, and hotspot concentrations by selected date range.</p>
+            <p class="subtitle">Track encampment cleanup and maintenance volume and hotspot concentrations by selected date range.</p>
           </div>
           <div class="theme-switch" role="group" aria-label="Map theme">
             <button id="theme-dark" class="theme-btn is-active" type="button">
@@ -65,12 +65,12 @@
               <option value="neighborhood-council">Neighborhood Council Districts</option>
             </select>
           </label>
-          <label class="filter-field" for="filter-source">
-            Source
-            <select id="filter-source">
+          <label class="filter-field" for="filter-cleanup-type">
+            Cleanup Type
+            <select id="filter-cleanup-type">
               <option value="both">Both</option>
-              <option value="encampment">Encampment Cleaning</option>
-              <option value="311">311</option>
+              <option value="removal">Cleanup</option>
+              <option value="maintenance">Maintenance</option>
             </select>
           </label>
           <label class="filter-field" for="filter-start">
