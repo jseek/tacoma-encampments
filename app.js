@@ -1,5 +1,4 @@
 const ENCAMPMENT_FILE = "data/ES_Encampment_Cleaning_Tracking.geojson";
-const REPORTS_311_FILE = "data/SeeClickFix_Requests.geojson";
 const POLICE_BLOCKS_FILE = "data/Police_Reporting_Blocks.geojson";
 const CITY_COUNCIL_FILE = "data/City_Council_Districts.geojson";
 const NEIGHBORHOOD_COUNCIL_FILE = "data/Neighborhood_Council_Districts.geojson";
@@ -8,9 +7,9 @@ const CRIME_QUERY_URL =
 const CRIME_RADIUS_FEET = 1000;
 const CRIME_WINDOW_DAYS = 30;
 
-const sourcePalette = {
-  encampment: "#00d1ff",
-  "311": "#ff7f50",
+const cleanupTypePalette = {
+  removal: "#00d1ff",
+  maintenance: "#ffb347",
 };
 
 const map = L.map("map", {
@@ -87,8 +86,21 @@ function toInputDate(value) {
   return `${y}-${m}-${d}`;
 }
 
-function markerForSource(source) {
-  const color = sourcePalette[source] || "#ffd166";
+function normalizedCleanupType(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "removal") return "removal";
+  if (normalized === "maintenance") return "maintenance";
+  return "unknown";
+}
+
+function cleanupTypeLabel(value) {
+  if (value === "removal") return "Cleanup";
+  if (value === "maintenance") return "Maintenance";
+  return "Unknown";
+}
+
+function markerForCleanupType(cleanupType) {
+  const color = cleanupTypePalette[cleanupType] || "#ffd166";
   return {
     radius: 6,
     weight: 2,
@@ -100,23 +112,9 @@ function markerForSource(source) {
 }
 
 function popupContent(properties) {
-  if (properties._source === "311") {
-    return `
-      <dl class="popup-grid">
-        <dt>Source</dt><dd>311</dd>
-        <dt>Created</dt><dd>${toDate(properties._date)}</dd>
-        <dt>Status</dt><dd>${toDisplay(properties.status)}</dd>
-        <dt>Category</dt><dd>${toDisplay(properties.category)}</dd>
-        <dt>Address</dt><dd>${toDisplay(properties.address)}</dd>
-        <dt>Agency</dt><dd>${toDisplay(properties.agency)}</dd>
-        <dt>Report ID</dt><dd>${toDisplay(properties.id)}</dd>
-      </dl>
-    `;
-  }
-
   return `
     <dl class="popup-grid">
-      <dt>Source</dt><dd>Encampment Cleaning</dd>
+      <dt>Type</dt><dd>${toDisplay(cleanupTypeLabel(properties._cleanupType))}</dd>
       <dt>Submitted</dt><dd>${toDate(properties._date)}</dd>
       <dt>Cleanup Type</dt><dd>${toDisplay(properties.type_of_cleanup)}</dd>
       <dt>Created</dt><dd>${toDate(properties.created_date)}</dd>
@@ -200,9 +198,6 @@ async function crimeBeaterSummary(lat, lon, cleanupDate) {
 }
 
 async function hydrateCrimeBeater(feature, featureLayer) {
-  const source = feature.properties?._source;
-  if (source !== "encampment") return;
-
   const popup = featureLayer.getPopup();
   if (!popup) return;
 
@@ -232,18 +227,17 @@ async function hydrateCrimeBeater(feature, featureLayer) {
 function summarizeFeatures(features, days = 30) {
   const now = Date.now();
   const windowStart = now - days * 24 * 60 * 60 * 1000;
-  const sourceCounts = {
-    encampment: 0,
-    "311": 0,
+  const cleanupTypeCounts = {
+    removal: 0,
+    maintenance: 0,
+    unknown: 0,
   };
 
   let recentEncampmentCount = 0;
 
   for (const feature of features) {
-    const source = feature.properties?._source || "encampment";
-    sourceCounts[source] = (sourceCounts[source] || 0) + 1;
-
-    if (source !== "encampment") continue;
+    const cleanupType = normalizedCleanupType(feature.properties?._cleanupType);
+    cleanupTypeCounts[cleanupType] = (cleanupTypeCounts[cleanupType] || 0) + 1;
     const time = new Date(feature.properties?._date).getTime();
     if (Number.isNaN(time)) continue;
     if (time >= windowStart && time <= now) {
@@ -253,7 +247,7 @@ function summarizeFeatures(features, days = 30) {
 
   return {
     total: features.length,
-    sourceCounts,
+    cleanupTypeCounts,
     recentEncampmentCount,
     now,
     windowStart,
@@ -263,7 +257,6 @@ function summarizeFeatures(features, days = 30) {
 
 function recentEncampmentCleanups(features, limit = 25) {
   return features
-    .filter((feature) => feature.properties?._source === "encampment")
     .map((feature) => {
       const timestamp = new Date(feature.properties?._date).getTime();
       return {
@@ -328,13 +321,13 @@ function renderRecentCleanupCount(stats) {
   recentEl.textContent = `Encampments cleaned in the past 30 days: ${stats.recentEncampmentCount.toLocaleString()}`;
 }
 
-function renderStats(total, sourceCounts) {
+function renderStats(total, cleanupTypeCounts) {
   const statsEl = byId("stats");
   if (!statsEl) return;
   const fragments = [
     `<span class="chip"><span class="dot" style="background:#8ab4f8"></span>Total: ${total.toLocaleString()}</span>`,
-    `<span class="chip"><span class="dot" style="background:${sourcePalette.encampment}"></span>Encampment Cleaning: ${(sourceCounts.encampment || 0).toLocaleString()}</span>`,
-    `<span class="chip"><span class="dot" style="background:${sourcePalette["311"]}"></span>311: ${(sourceCounts["311"] || 0).toLocaleString()}</span>`,
+    `<span class="chip"><span class="dot" style="background:${cleanupTypePalette.removal}"></span>Cleanup: ${(cleanupTypeCounts.removal || 0).toLocaleString()}</span>`,
+    `<span class="chip"><span class="dot" style="background:${cleanupTypePalette.maintenance}"></span>Maintenance: ${(cleanupTypeCounts.maintenance || 0).toLocaleString()}</span>`,
   ];
 
   if (!total) {
@@ -349,8 +342,8 @@ function renderInsightCards(features) {
   if (!cardsEl) return;
 
   const stats = summarizeFeatures(features);
-  const encampmentCount = stats.sourceCounts.encampment || 0;
-  const encampmentShare = stats.total ? Math.round((encampmentCount / stats.total) * 100) : 0;
+  const cleanupCount = stats.cleanupTypeCounts.removal || 0;
+  const cleanupShare = stats.total ? Math.round((cleanupCount / stats.total) * 100) : 0;
 
   cardsEl.innerHTML = `
     <article class="insight-card">
@@ -358,16 +351,16 @@ function renderInsightCards(features) {
       <p class="insight-value">${stats.total.toLocaleString()}</p>
     </article>
     <article class="insight-card">
-      <p class="insight-label">Encampment Share</p>
-      <p class="insight-value">${encampmentShare}%</p>
+      <p class="insight-label">Cleanup Share</p>
+      <p class="insight-value">${cleanupShare}%</p>
     </article>
     <article class="insight-card">
       <p class="insight-label">Encampments (30 days)</p>
       <p class="insight-value">${stats.recentEncampmentCount.toLocaleString()}</p>
     </article>
     <article class="insight-card">
-      <p class="insight-label">311 Reports</p>
-      <p class="insight-value">${(stats.sourceCounts["311"] || 0).toLocaleString()}</p>
+      <p class="insight-label">Maintenance</p>
+      <p class="insight-value">${(stats.cleanupTypeCounts.maintenance || 0).toLocaleString()}</p>
     </article>
   `;
 }
@@ -376,14 +369,13 @@ function renderCleanupTypeMix(features) {
   const listEl = byId("cleanup-type-list");
   if (!listEl) return;
 
-  const encampments = features.filter((feature) => feature.properties?._source === "encampment");
-  if (!encampments.length) {
+  if (!features.length) {
     listEl.innerHTML = '<div class="analysis-row">No encampment records in the selected range.</div>';
     return;
   }
 
   const countsByType = {};
-  for (const feature of encampments) {
+  for (const feature of features) {
     const label = feature.properties?.type_of_cleanup || "Unknown";
     countsByType[label] = (countsByType[label] || 0) + 1;
   }
@@ -395,7 +387,7 @@ function renderCleanupTypeMix(features) {
 
   listEl.innerHTML = topTypes
     .map(([label, count]) => {
-      const pct = Math.round((count / encampments.length) * 100);
+      const pct = Math.round((count / features.length) * 100);
       const width = Math.max(8, Math.round((count / maxCount) * 100));
       return `
         <div class="analysis-row">
@@ -413,7 +405,6 @@ function renderHotspots(features) {
 
   const countsByBlock = {};
   for (const feature of features) {
-    if (feature.properties?._source !== "encampment") continue;
     const blockId = feature.properties?._blockObjectId;
     if (!blockId) continue;
     countsByBlock[blockId] = (countsByBlock[blockId] || 0) + 1;
@@ -453,7 +444,6 @@ function renderTrendBars(features) {
   const buckets = new Array(10).fill(0);
 
   for (const feature of features) {
-    if (feature.properties?._source !== "encampment") continue;
     const timestamp = new Date(feature.properties?._date).getTime();
     if (Number.isNaN(timestamp) || timestamp < start || timestamp > now) continue;
     const index = Math.min(9, Math.floor(((timestamp - start) / thirtyDaysMs) * 10));
@@ -501,32 +491,32 @@ function renderAnalysis(features) {
   renderDataFreshness(features);
 }
 
-function setFilterSummary(startValue, endValue, sourceValue) {
+function setFilterSummary(startValue, endValue, cleanupTypeValue) {
   const summaryEl = byId("filter-summary");
   if (!summaryEl) return;
-  const sourceLabel =
-    sourceValue === "encampment"
-      ? "Encampment Cleaning"
-      : sourceValue === "311"
-        ? "311"
-        : "Both sources";
+  const cleanupTypeLabelText =
+    cleanupTypeValue === "removal"
+      ? "Cleanup"
+      : cleanupTypeValue === "maintenance"
+        ? "Maintenance"
+        : "Both cleanup types";
 
   if (!startValue && !endValue) {
-    summaryEl.textContent = `${sourceLabel} | All dates`;
+    summaryEl.textContent = `${cleanupTypeLabelText} | All dates`;
     return;
   }
 
   if (startValue && endValue) {
-    summaryEl.textContent = `${sourceLabel} | ${startValue} to ${endValue}`;
+    summaryEl.textContent = `${cleanupTypeLabelText} | ${startValue} to ${endValue}`;
     return;
   }
 
   if (startValue) {
-    summaryEl.textContent = `${sourceLabel} | From ${startValue}`;
+    summaryEl.textContent = `${cleanupTypeLabelText} | From ${startValue}`;
     return;
   }
 
-  summaryEl.textContent = `${sourceLabel} | Up to ${endValue}`;
+  summaryEl.textContent = `${cleanupTypeLabelText} | Up to ${endValue}`;
 }
 
 function dateBoundsFromInputs() {
@@ -573,8 +563,8 @@ function renderEncampments(features) {
     { type: "FeatureCollection", features },
     {
       pointToLayer(feature, latlng) {
-        const source = feature.properties?._source || "encampment";
-        return L.circleMarker(latlng, markerForSource(source));
+        const cleanupType = normalizedCleanupType(feature.properties?._cleanupType);
+        return L.circleMarker(latlng, markerForCleanupType(cleanupType));
       },
       onEachFeature(feature, featureLayer) {
         featureLayer.bindPopup(popupContent(feature.properties || {}));
@@ -588,7 +578,7 @@ function renderEncampments(features) {
   clusters.addLayer(currentLayer);
   map.addLayer(clusters);
 
-  renderStats(stats.total, stats.sourceCounts);
+  renderStats(stats.total, stats.cleanupTypeCounts);
   renderRecentCleanupCount(stats);
 
   const bounds = currentLayer.getBounds();
@@ -683,7 +673,6 @@ function renderPoliceBlocks(features) {
   const areaStatsByBlockId = {};
 
   for (const feature of features) {
-    const source = feature.properties?._source || "encampment";
     const blockId = feature.properties?._blockObjectId;
     if (!blockId) continue;
 
@@ -693,12 +682,10 @@ function renderPoliceBlocks(features) {
       areaStatsByBlockId[blockId] = { encampmentTotal: 0, encampmentRecent30: 0 };
     }
 
-    if (source === "encampment") {
-      areaStatsByBlockId[blockId].encampmentTotal += 1;
-      const time = new Date(feature.properties?._date).getTime();
-      if (!Number.isNaN(time) && time >= stats.windowStart && time <= stats.now) {
-        areaStatsByBlockId[blockId].encampmentRecent30 += 1;
-      }
+    areaStatsByBlockId[blockId].encampmentTotal += 1;
+    const time = new Date(feature.properties?._date).getTime();
+    if (!Number.isNaN(time) && time >= stats.windowStart && time <= stats.now) {
+      areaStatsByBlockId[blockId].encampmentRecent30 += 1;
     }
   }
 
@@ -747,7 +734,7 @@ function renderPoliceBlocks(features) {
   });
 
   policeBlocksLayer.addTo(map);
-  renderStats(stats.total, stats.sourceCounts);
+  renderStats(stats.total, stats.cleanupTypeCounts);
   renderRecentCleanupCount(stats);
 
   const bounds = policeBlocksLayer.getBounds();
@@ -767,7 +754,6 @@ function renderCityCouncilDistricts(features) {
   const areaStatsByDistrictId = {};
 
   for (const feature of features) {
-    const source = feature.properties?._source || "encampment";
     const districtId = feature.properties?._councilObjectId;
     if (!districtId) continue;
 
@@ -777,12 +763,10 @@ function renderCityCouncilDistricts(features) {
       areaStatsByDistrictId[districtId] = { encampmentTotal: 0, encampmentRecent30: 0 };
     }
 
-    if (source === "encampment") {
-      areaStatsByDistrictId[districtId].encampmentTotal += 1;
-      const time = new Date(feature.properties?._date).getTime();
-      if (!Number.isNaN(time) && time >= stats.windowStart && time <= stats.now) {
-        areaStatsByDistrictId[districtId].encampmentRecent30 += 1;
-      }
+    areaStatsByDistrictId[districtId].encampmentTotal += 1;
+    const time = new Date(feature.properties?._date).getTime();
+    if (!Number.isNaN(time) && time >= stats.windowStart && time <= stats.now) {
+      areaStatsByDistrictId[districtId].encampmentRecent30 += 1;
     }
   }
 
@@ -831,7 +815,7 @@ function renderCityCouncilDistricts(features) {
   });
 
   cityCouncilLayer.addTo(map);
-  renderStats(stats.total, stats.sourceCounts);
+  renderStats(stats.total, stats.cleanupTypeCounts);
   renderRecentCleanupCount(stats);
 
   const bounds = cityCouncilLayer.getBounds();
@@ -851,7 +835,6 @@ function renderNeighborhoodCouncilDistricts(features) {
   const areaStatsByNeighborhoodId = {};
 
   for (const feature of features) {
-    const source = feature.properties?._source || "encampment";
     const neighborhoodId = feature.properties?._neighborhoodObjectId;
     if (!neighborhoodId) continue;
 
@@ -861,12 +844,10 @@ function renderNeighborhoodCouncilDistricts(features) {
       areaStatsByNeighborhoodId[neighborhoodId] = { encampmentTotal: 0, encampmentRecent30: 0 };
     }
 
-    if (source === "encampment") {
-      areaStatsByNeighborhoodId[neighborhoodId].encampmentTotal += 1;
-      const time = new Date(feature.properties?._date).getTime();
-      if (!Number.isNaN(time) && time >= stats.windowStart && time <= stats.now) {
-        areaStatsByNeighborhoodId[neighborhoodId].encampmentRecent30 += 1;
-      }
+    areaStatsByNeighborhoodId[neighborhoodId].encampmentTotal += 1;
+    const time = new Date(feature.properties?._date).getTime();
+    if (!Number.isNaN(time) && time >= stats.windowStart && time <= stats.now) {
+      areaStatsByNeighborhoodId[neighborhoodId].encampmentRecent30 += 1;
     }
   }
 
@@ -918,7 +899,7 @@ function renderNeighborhoodCouncilDistricts(features) {
   });
 
   neighborhoodCouncilLayer.addTo(map);
-  renderStats(stats.total, stats.sourceCounts);
+  renderStats(stats.total, stats.cleanupTypeCounts);
   renderRecentCleanupCount(stats);
 
   const bounds = neighborhoodCouncilLayer.getBounds();
@@ -948,13 +929,13 @@ function renderCurrentMap(filteredFeatures) {
 
 function applyFilters() {
   const { startValue, endValue, startMs, endMs } = dateBoundsFromInputs();
-  const sourceValue = valueById("filter-source", "both");
+  const cleanupTypeValue = valueById("filter-cleanup-type", "both");
   const normalizedStart = startMs !== null && endMs !== null && startMs > endMs ? endMs : startMs;
   const normalizedEnd = startMs !== null && endMs !== null && startMs > endMs ? startMs : endMs;
 
   const filtered = allFeatures.filter((feature) => {
-    const source = feature.properties?._source;
-    if (sourceValue !== "both" && source !== sourceValue) {
+    const cleanupType = normalizedCleanupType(feature.properties?._cleanupType);
+    if (cleanupTypeValue !== "both" && cleanupType !== cleanupTypeValue) {
       return false;
     }
 
@@ -969,9 +950,9 @@ function applyFilters() {
   renderRecentCleanupTable(filtered);
   renderAnalysis(filtered);
   if (startMs !== null && endMs !== null && startMs > endMs) {
-    setFilterSummary(endValue, startValue, sourceValue);
+    setFilterSummary(endValue, startValue, cleanupTypeValue);
   } else {
-    setFilterSummary(startValue, endValue, sourceValue);
+    setFilterSummary(startValue, endValue, cleanupTypeValue);
   }
 }
 
@@ -1014,20 +995,8 @@ function normalizeEncampmentFeature(feature) {
     geometry: feature.geometry,
     properties: {
       ...feature.properties,
-      _source: "encampment",
+      _cleanupType: normalizedCleanupType(feature.properties?.type_of_cleanup),
       _date: feature.properties?.work_submitted_date,
-    },
-  };
-}
-
-function normalize311Feature(feature) {
-  return {
-    type: "Feature",
-    geometry: feature.geometry,
-    properties: {
-      ...feature.properties,
-      _source: "311",
-      _date: feature.properties?.created_at,
     },
   };
 }
@@ -1149,14 +1118,9 @@ function assignNeighborhoodDistrictsToFeatures(features, neighborhoodFeatureColl
 }
 
 async function loadData() {
-  const [encampmentData, reportsData] = await Promise.all([
-    loadGeojson(ENCAMPMENT_FILE),
-    loadGeojson(REPORTS_311_FILE),
-  ]);
-
+  const encampmentData = await loadGeojson(ENCAMPMENT_FILE);
   const encampmentFeatures = (encampmentData.features || []).map(normalizeEncampmentFeature);
-  const reportsFeatures = (reportsData.features || []).map(normalize311Feature);
-  allFeatures = [...encampmentFeatures, ...reportsFeatures];
+  allFeatures = [...encampmentFeatures];
   updateDateInputBounds(allFeatures);
   applyFilters();
 
@@ -1213,7 +1177,7 @@ const applyDateBtn = byId("apply-date-filter");
 const clearDateBtn = byId("clear-date-filter");
 const filterStartInput = byId("filter-start");
 const filterEndInput = byId("filter-end");
-const filterSourceSelect = byId("filter-source");
+const filterCleanupTypeSelect = byId("filter-cleanup-type");
 const mapTypeSelect = byId("map-type");
 
 if (themeDarkBtn) themeDarkBtn.addEventListener("click", () => setTheme("dark"));
@@ -1228,7 +1192,7 @@ if (clearDateBtn) {
 }
 if (filterStartInput) filterStartInput.addEventListener("change", applyFilters);
 if (filterEndInput) filterEndInput.addEventListener("change", applyFilters);
-if (filterSourceSelect) filterSourceSelect.addEventListener("change", applyFilters);
+if (filterCleanupTypeSelect) filterCleanupTypeSelect.addEventListener("change", applyFilters);
 if (mapTypeSelect) mapTypeSelect.addEventListener("change", applyFilters);
 
 setTheme("dark");
