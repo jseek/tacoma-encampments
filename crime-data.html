@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tacoma Crime Data Explorer</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body class="theme-dark">
+    <main class="subpage-layout">
+      <header class="panel subpage-panel">
+        <a class="subpage-link" href="index.html">← Back to Encampment Map</a>
+        <h1>Crime Data Explorer</h1>
+        <p class="subtitle">
+          This page shows the kinds of crime fields returned by the City of Tacoma ArcGIS crime endpoint.
+        </p>
+      </header>
+
+      <section class="subpage-grid">
+        <article class="subpage-card">
+          <h2>Field Schema</h2>
+          <p>
+            These are the available fields from the ArcGIS metadata response (name, type, and alias).
+          </p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Field</th>
+                  <th>Type</th>
+                  <th>Alias</th>
+                </tr>
+              </thead>
+              <tbody id="crime-fields-body">
+                <tr>
+                  <td colspan="3">Loading field metadata...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </article>
+
+        <article class="subpage-card">
+          <h2>Sample Records</h2>
+          <p>
+            A small sample of recent records, showing the type of information returned in each event.
+          </p>
+          <div id="crime-sample-meta" class="analysis-meta">Loading sample records...</div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Date Occurred</th>
+                  <th>Description</th>
+                  <th>Category</th>
+                  <th>Address</th>
+                  <th>Sector</th>
+                </tr>
+              </thead>
+              <tbody id="crime-samples-body">
+                <tr>
+                  <td colspan="5">Loading samples...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+    </main>
+
+    <script>
+      const CRIME_BASE_URL =
+        "https://services3.arcgis.com/SCwJH1pD8WSn5T5y/arcgis/rest/services/Crime_Data/FeatureServer/0";
+
+      function escapeHtml(value) {
+        return String(value ?? "")
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#39;");
+      }
+
+      function toDisplay(value) {
+        return value === null || value === undefined || value === "" ? "N/A" : String(value);
+      }
+
+      function toDate(value) {
+        if (!value) return "N/A";
+        const parsed = new Date(value);
+        return Number.isNaN(parsed.getTime()) ? String(value) : parsed.toLocaleString();
+      }
+
+      async function loadFieldMetadata() {
+        const fieldsBody = document.getElementById("crime-fields-body");
+        try {
+          const url = `${CRIME_BASE_URL}?f=pjson`;
+          const response = await fetch(url);
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          const payload = await response.json();
+
+          const fields = Array.isArray(payload.fields) ? payload.fields : [];
+          if (!fields.length) {
+            fieldsBody.innerHTML = '<tr><td colspan="3">No field metadata returned.</td></tr>';
+            return;
+          }
+
+          fieldsBody.innerHTML = fields
+            .map((field) => {
+              return `<tr>
+                <td>${escapeHtml(toDisplay(field.name))}</td>
+                <td>${escapeHtml(toDisplay(field.type))}</td>
+                <td>${escapeHtml(toDisplay(field.alias))}</td>
+              </tr>`;
+            })
+            .join("");
+        } catch (error) {
+          console.warn("Failed to load crime metadata", error);
+          fieldsBody.innerHTML =
+            '<tr><td colspan="3">Unable to load field metadata from ArcGIS.</td></tr>';
+        }
+      }
+
+      async function loadSampleRecords() {
+        const sampleBody = document.getElementById("crime-samples-body");
+        const sampleMeta = document.getElementById("crime-sample-meta");
+
+        try {
+          const params = new URLSearchParams({
+            f: "json",
+            where: "1=1",
+            outFields: "DateOccurred,Description,Offense_Category,Address,Sector",
+            orderByFields: "DateOccurred DESC",
+            returnGeometry: "false",
+            resultRecordCount: "8",
+          });
+
+          const response = await fetch(`${CRIME_BASE_URL}/query?${params.toString()}`);
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          const payload = await response.json();
+          const features = Array.isArray(payload.features) ? payload.features : [];
+
+          if (!features.length) {
+            sampleMeta.textContent = "No records returned in this sample.";
+            sampleBody.innerHTML = '<tr><td colspan="5">No sample records available.</td></tr>';
+            return;
+          }
+
+          sampleMeta.textContent = `Showing ${features.length} of the most recent records.`;
+          sampleBody.innerHTML = features
+            .map((feature) => {
+              const attrs = feature.attributes || {};
+              return `<tr>
+                <td>${escapeHtml(toDate(attrs.DateOccurred))}</td>
+                <td>${escapeHtml(toDisplay(attrs.Description))}</td>
+                <td>${escapeHtml(toDisplay(attrs.Offense_Category))}</td>
+                <td>${escapeHtml(toDisplay(attrs.Address))}</td>
+                <td>${escapeHtml(toDisplay(attrs.Sector))}</td>
+              </tr>`;
+            })
+            .join("");
+        } catch (error) {
+          console.warn("Failed to load sample crime records", error);
+          sampleMeta.textContent = "Unable to load sample records from ArcGIS.";
+          sampleBody.innerHTML = '<tr><td colspan="5">Unable to load samples.</td></tr>';
+        }
+      }
+
+      loadFieldMetadata();
+      loadSampleRecords();
+    </script>
+  </body>
+</html>

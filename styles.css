@@ -385,3 +385,42 @@ p {
     grid-template-columns: 1fr;
   }
 }
+
+.subpage-link {
+  display: inline-block;
+  color: var(--maintenance);
+  text-decoration: none;
+  font-size: 0.88rem;
+}
+
+.subpage-link:hover {
+  text-decoration: underline;
+}
+
+.subpage-layout {
+  min-height: 100vh;
+  padding: 1rem;
+}
+
+.subpage-panel {
+  border-radius: 12px;
+  border: 1px solid var(--chip-border);
+}
+
+.subpage-grid {
+  margin-top: 0.9rem;
+  display: grid;
+  gap: 0.9rem;
+}
+
+.subpage-card {
+  background: color-mix(in srgb, var(--panel) 94%, transparent);
+  border: 1px solid var(--chip-border);
+  border-radius: 12px;
+  padding: 0.8rem;
+}
+
+.subpage-card h2 {
+  margin: 0 0 0.45rem;
+  font-size: 1rem;
+}
