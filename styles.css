@@ -70,6 +70,12 @@ h1 {
   font-size: 1.2rem;
 }
 
+.subtitle {
+  margin: 0.25rem 0 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
 p {
   margin: 0.35rem 0 0;
   font-size: 0.92rem;
@@ -160,9 +166,116 @@ p {
   border-radius: 50%;
 }
 
-#map {
-  min-height: 70vh;
+.content-grid {
+  display: grid;
+  grid-template-columns: minmax(280px, 360px) 1fr;
+  gap: 0.9rem;
+  padding: 0.9rem 1.1rem;
+}
+
+.analysis-panel {
+  background: color-mix(in srgb, var(--panel) 94%, transparent);
+  border: 1px solid var(--chip-border);
+  border-radius: 12px;
+  padding: 0.8rem;
+  display: grid;
+  gap: 0.95rem;
+  align-content: start;
+}
+
+.analysis-panel h2 {
+  margin: 0 0 0.45rem;
+  font-size: 0.92rem;
+}
+
+.insight-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.insight-card {
+  border: 1px solid var(--chip-border);
+  border-radius: 10px;
+  background: var(--chip-bg);
+  padding: 0.5rem;
+}
+
+.insight-label {
+  margin: 0;
+  font-size: 0.74rem;
+  color: var(--muted);
+}
+
+.insight-value {
+  margin: 0.1rem 0 0;
+  font-size: 1.08rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.analysis-list {
+  display: grid;
+  gap: 0.36rem;
+}
+
+.analysis-row {
+  border: 1px solid var(--chip-border);
+  border-radius: 10px;
+  background: var(--chip-bg);
+  padding: 0.42rem 0.5rem;
+  display: grid;
+  gap: 0.28rem;
+}
+
+.analysis-row-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.4rem;
+  font-size: 0.82rem;
+}
+
+.analysis-bar {
+  height: 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted) 25%, transparent);
+  overflow: hidden;
+}
+
+.analysis-bar-fill {
   height: 100%;
+  background: linear-gradient(90deg, #58ccff, #ff9b7b);
+}
+
+.trend-bars {
+  display: grid;
+  grid-template-columns: repeat(10, minmax(0, 1fr));
+  gap: 0.25rem;
+  align-items: end;
+  height: 92px;
+  border: 1px solid var(--chip-border);
+  border-radius: 10px;
+  padding: 0.45rem;
+  background: var(--chip-bg);
+}
+
+.trend-bar {
+  background: linear-gradient(180deg, #7cc8ff, #2f6c98);
+  border-radius: 5px 5px 2px 2px;
+  min-height: 2px;
+}
+
+.analysis-meta {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+#map {
+  min-height: 62vh;
+  height: 100%;
+  border: 1px solid var(--chip-border);
+  border-radius: 12px;
 }
 
 .marker {
@@ -207,23 +320,8 @@ p {
   margin: 0;
 }
 
-@media (max-width: 720px) {
-  h1 {
-    font-size: 1.05rem;
-  }
-
-  .theme-btn {
-    padding: 0.25rem 0.55rem;
-  }
-
-  .filter-field {
-    width: 100%;
-    justify-content: space-between;
-  }
-}
-
 .table-panel {
-  padding: 0.9rem 1.1rem 1.2rem;
+  padding: 0 1.1rem 1.2rem;
 }
 
 .table-panel h2 {
@@ -259,10 +357,31 @@ p {
   color: var(--text);
 }
 
-#recent-cleanups-table tbody tr.cleanup-row {
-  cursor: pointer;
+@media (max-width: 1024px) {
+  .content-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .analysis-panel {
+    order: 2;
+  }
 }
 
-#recent-cleanups-table tbody tr.cleanup-row:hover {
-  background: color-mix(in srgb, var(--chip-bg) 70%, #4a6fa5 30%);
+@media (max-width: 720px) {
+  h1 {
+    font-size: 1.05rem;
+  }
+
+  .theme-btn {
+    padding: 0.25rem 0.55rem;
+  }
+
+  .filter-field {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .insight-grid {
+    grid-template-columns: 1fr;
+  }
 }

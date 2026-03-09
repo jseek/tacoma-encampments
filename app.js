@@ -69,6 +69,15 @@ function toDate(value) {
   return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString();
 }
 
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
 function toInputDate(value) {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return null;
@@ -333,6 +342,163 @@ function renderStats(total, sourceCounts) {
   }
 
   statsEl.innerHTML = fragments.join("");
+}
+
+function renderInsightCards(features) {
+  const cardsEl = byId("insight-cards");
+  if (!cardsEl) return;
+
+  const stats = summarizeFeatures(features);
+  const encampmentCount = stats.sourceCounts.encampment || 0;
+  const encampmentShare = stats.total ? Math.round((encampmentCount / stats.total) * 100) : 0;
+
+  cardsEl.innerHTML = `
+    <article class="insight-card">
+      <p class="insight-label">Filtered Records</p>
+      <p class="insight-value">${stats.total.toLocaleString()}</p>
+    </article>
+    <article class="insight-card">
+      <p class="insight-label">Encampment Share</p>
+      <p class="insight-value">${encampmentShare}%</p>
+    </article>
+    <article class="insight-card">
+      <p class="insight-label">Encampments (30 days)</p>
+      <p class="insight-value">${stats.recentEncampmentCount.toLocaleString()}</p>
+    </article>
+    <article class="insight-card">
+      <p class="insight-label">311 Reports</p>
+      <p class="insight-value">${(stats.sourceCounts["311"] || 0).toLocaleString()}</p>
+    </article>
+  `;
+}
+
+function renderCleanupTypeMix(features) {
+  const listEl = byId("cleanup-type-list");
+  if (!listEl) return;
+
+  const encampments = features.filter((feature) => feature.properties?._source === "encampment");
+  if (!encampments.length) {
+    listEl.innerHTML = '<div class="analysis-row">No encampment records in the selected range.</div>';
+    return;
+  }
+
+  const countsByType = {};
+  for (const feature of encampments) {
+    const label = feature.properties?.type_of_cleanup || "Unknown";
+    countsByType[label] = (countsByType[label] || 0) + 1;
+  }
+
+  const topTypes = Object.entries(countsByType)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5);
+  const maxCount = topTypes[0]?.[1] || 1;
+
+  listEl.innerHTML = topTypes
+    .map(([label, count]) => {
+      const pct = Math.round((count / encampments.length) * 100);
+      const width = Math.max(8, Math.round((count / maxCount) * 100));
+      return `
+        <div class="analysis-row">
+          <div class="analysis-row-top"><span>${escapeHtml(label)}</span><strong>${count.toLocaleString()} (${pct}%)</strong></div>
+          <div class="analysis-bar"><div class="analysis-bar-fill" style="width:${width}%"></div></div>
+        </div>
+      `;
+    })
+    .join("");
+}
+
+function renderHotspots(features) {
+  const hotspotEl = byId("hotspot-list");
+  if (!hotspotEl) return;
+
+  const countsByBlock = {};
+  for (const feature of features) {
+    if (feature.properties?._source !== "encampment") continue;
+    const blockId = feature.properties?._blockObjectId;
+    if (!blockId) continue;
+    countsByBlock[blockId] = (countsByBlock[blockId] || 0) + 1;
+  }
+
+  const hotspots = Object.entries(countsByBlock)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5);
+
+  if (!hotspots.length) {
+    hotspotEl.innerHTML = '<div class="analysis-row">Hotspots will appear once block boundaries are loaded.</div>';
+    return;
+  }
+
+  const maxCount = hotspots[0][1] || 1;
+  hotspotEl.innerHTML = hotspots
+    .map(([blockId, count]) => {
+      const label = policeBlockNamesById.get(Number(blockId)) || `Block ${blockId}`;
+      const width = Math.max(8, Math.round((count / maxCount) * 100));
+      return `
+        <div class="analysis-row">
+          <div class="analysis-row-top"><span>${escapeHtml(label)}</span><strong>${count.toLocaleString()}</strong></div>
+          <div class="analysis-bar"><div class="analysis-bar-fill" style="width:${width}%"></div></div>
+        </div>
+      `;
+    })
+    .join("");
+}
+
+function renderTrendBars(features) {
+  const trendEl = byId("trend-bars");
+  if (!trendEl) return;
+
+  const now = Date.now();
+  const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
+  const start = now - thirtyDaysMs;
+  const buckets = new Array(10).fill(0);
+
+  for (const feature of features) {
+    if (feature.properties?._source !== "encampment") continue;
+    const timestamp = new Date(feature.properties?._date).getTime();
+    if (Number.isNaN(timestamp) || timestamp < start || timestamp > now) continue;
+    const index = Math.min(9, Math.floor(((timestamp - start) / thirtyDaysMs) * 10));
+    buckets[index] += 1;
+  }
+
+  const maxBucket = Math.max(1, ...buckets);
+  trendEl.innerHTML = buckets
+    .map((count, index) => {
+      const height = Math.max(4, Math.round((count / maxBucket) * 100));
+      return `<div class="trend-bar" title="Segment ${index + 1}: ${count} cleanups" style="height:${height}%"></div>`;
+    })
+    .join("");
+}
+
+function renderDataFreshness(features) {
+  const freshnessEl = byId("data-freshness");
+  if (!freshnessEl) return;
+
+  if (!features.length) {
+    freshnessEl.textContent = "No records available for the current filters.";
+    return;
+  }
+
+  const newestTimestamp = Math.max(
+    ...features
+      .map((feature) => new Date(feature.properties?._date).getTime())
+      .filter((timestamp) => !Number.isNaN(timestamp))
+  );
+
+  if (!Number.isFinite(newestTimestamp)) {
+    freshnessEl.textContent = "Unable to determine record freshness from selected data.";
+    return;
+  }
+
+  const ageDays = Math.floor((Date.now() - newestTimestamp) / (24 * 60 * 60 * 1000));
+  freshnessEl.textContent = `Latest record in this filter: ${new Date(newestTimestamp).toLocaleDateString()} (${ageDays} day${ageDays === 1 ? "" : "s"} ago).`;
+}
+
+function renderAnalysis(features) {
+  renderInsightCards(features);
+  renderCleanupTypeMix(features);
+  renderHotspots(features);
+  renderTrendBars(features);
+  renderDataFreshness(features);
 }
 
 function setFilterSummary(startValue, endValue, sourceValue) {
@@ -801,6 +967,7 @@ function applyFilters() {
 
   renderCurrentMap(filtered);
   renderRecentCleanupTable(filtered);
+  renderAnalysis(filtered);
   if (startMs !== null && endMs !== null && startMs > endMs) {
     setFilterSummary(endValue, startValue, sourceValue);
   } else {
