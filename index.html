@@ -39,7 +39,10 @@
     <main class="layout">
       <header class="panel">
         <div class="panel-top">
-          <h1>Tacoma Encampment Cleanup Tracking</h1>
+          <div>
+            <h1>Tacoma Encampment Cleanup Analysis</h1>
+            <p class="subtitle">Track cleanup volume, source mix, and hotspot concentrations by selected date range.</p>
+          </div>
           <div class="theme-switch" role="group" aria-label="Map theme">
             <button id="theme-dark" class="theme-btn is-active" type="button">
               Dark
@@ -88,7 +91,40 @@
         </div>
         <div id="stats" class="stats"></div>
       </header>
-      <section id="map" aria-label="Encampment map"></section>
+
+      <section class="content-grid">
+        <aside class="analysis-panel" aria-label="Analysis summary">
+          <section>
+            <h2>Overview</h2>
+            <div id="insight-cards" class="insight-grid">
+              <article class="insight-card">Loading overview...</article>
+            </div>
+          </section>
+
+          <section>
+            <h2>Cleanup Type Mix</h2>
+            <div id="cleanup-type-list" class="analysis-list">Loading cleanup types...</div>
+          </section>
+
+          <section>
+            <h2>Hotspots (Encampments)</h2>
+            <div id="hotspot-list" class="analysis-list">Loading hotspots...</div>
+          </section>
+
+          <section>
+            <h2>30-Day Trend</h2>
+            <div id="trend-bars" class="trend-bars">Loading trend...</div>
+          </section>
+
+          <section>
+            <h2>Data Freshness</h2>
+            <p id="data-freshness" class="analysis-meta">Loading freshness...</p>
+          </section>
+        </aside>
+
+        <section id="map" aria-label="Encampment map"></section>
+      </section>
+
       <section class="table-panel" aria-label="Recent encampment cleanups">
         <h2>Most Recent Encampment Cleanups</h2>
         <div class="table-wrap">
